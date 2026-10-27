@@ -9,10 +9,12 @@
 | 源码 | `padavanonly/immortalwrt-mt798x-24.10` 分支 `openwrt-24.10-6.6` | 仓库 |
 | 内核 | 6.6.133 | 分支提交记录 |
 | 无线驱动 | `mt_wifi` **7.6.6.1-mt7981** | `package/mtk/drivers/mt_wifi/Makefile` 的 `PKG_VERSION` |
-| 设备 id | **`mt7981-360-t7-108M`** | 仓库 `defconfig/mt7981-ax3000.config` 里已默认选中 |
+| 设备 id | **`qihoo_360t7`** | `filogic.mk:1861` `define Device/qihoo_360t7` |
 | 加速 | `kmod-mediatek_hnat` + WARP v2 + `MTK_MT7981_NEW_FW` | 同一 defconfig |
 
-**关键结论：不需要改 dts，不需要自己写设备定义。** 这个 fork 自带的 mt7981 defconfig 里，360T7 的闭源版本（108M 分区）本来就是选中的，`kmod-mt_wifi=y`、没有 `kmod-mt7915e`。这套流水线做的事就是把它单独拎出来编译，省掉其余十几个机型的编译时间。
+**关键结论：不需要改 dts，不需要自己写设备定义。** 这个 fork 自带的 mt7981 defconfig 里 `kmod-mt_wifi=y`、没有 `kmod-mt7915e`，`qihoo_360t7` 的 dts（`mt7981b-qihoo-360t7`）本身就是 108M ubi 布局。这套流水线做的事就是把它单独拎出来编译，省掉其余十几个机型的编译时间。
+
+> ⚠️ 仓库 `defconfig/mt7981-ax3000.config` 里原本写的是 `CONFIG_TARGET_DEVICE_..._mt7981-360-t7-108M`，这是**过期符号**（沿袭 hanwckf 21.02 的命名），当前 `openwrt-24.10-6.6` 分支源码树里不存在。`make defconfig` 会静默丢弃它，必须改成 `qihoo_360t7`。这个问题已在第一次实跑时被校验脚本拦下（run 40462376449）。
 
 ## 怎么用
 
@@ -44,16 +46,16 @@ Token 权限（fine-grained）：`Administration=write`、`Contents=write`、`Ac
    ```
 
 3. 进仓库 **Actions** → 左侧 `build-360t7` → **Run workflow** → 直接点绿色的 Run。
-   - 想换设备就在 `device` 输入框里改（比如 `mt7981-clt-r30b1-112M`）。
+   - 想换设备就在 `device` 输入框里改（比如 `xiaomi_mi-router-ax3000t-mtkuboot`）。
 4. 等 50~90 分钟。编译完成会同时产出：
-   - **Artifact**：`immortalwrt-24.10-mtwifi-mt7981-360-t7-108M`
+   - **Artifact**：`immortalwrt-24.10-mtwifi-qihoo_360t7`
    - **Release**：`build-YYYYMMDD-<run号>`，带 sha256sums
 
 产物形如：
 
 ```
-immortalwrt-mediatek-filogic-mt7981-360-t7-108M-squashfs-sysupgrade.bin
-immortalwrt-mediatek-filogic-mt7981-360-t7-108M-squashfs-factory.bin
+immortalwrt-mediatek-filogic-qihoo_360t7-squashfs-sysupgrade.bin
+immortalwrt-mediatek-filogic-qihoo_360t7-squashfs-factory.bin
 sha256sums
 *.manifest
 ```
@@ -62,7 +64,7 @@ sha256sums
 
 ## 刷机前提
 
-`mt7981-360-t7-108M` = **108M ubi 分区**布局，对应 dts 里 `ubi` 从 `0x580000` 起、长度 `0x6c00000`。
+`qihoo_360t7` = **108M ubi 分区**布局，对应 dts 里 `ubi` 从 `0x580000` 起、长度 `0x6c00000`。
 
 **原厂 uboot 起不来这个固件。** 必须先刷支持 108M 分区的改版 uboot（hanwckf 的 `bl-mt798x` 或同类的 7981 multi-layout uboot），再从 uboot 的 web 恢复页刷 `factory.bin`，之后升级走 `sysupgrade.bin`。
 
@@ -74,7 +76,7 @@ sha256sums
 
 检查项：
 
-- `CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_mt7981-360-t7-108M=y`
+- `CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_qihoo_360t7=y`
 - `CONFIG_PACKAGE_kmod-mt_wifi=y`
 - `CONFIG_MTK_CHIP_MT7981=y`
 - `CONFIG_MTK_MT7981_NEW_FW=y`

@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--repo", default="360t7-mtwifi-builder", help="仓库名")
     ap.add_argument("--private", action="store_true", help="建私有仓库（默认公开，公开仓库 Actions 不限时长）")
     ap.add_argument("--branch", default="main")
-    ap.add_argument("--device", default="mt7981-360-t7-108M", help="传给 workflow 的设备 id")
+    ap.add_argument("--device", default="qihoo_360t7", help="传给 workflow 的设备 id")
     ap.add_argument("--no-build", action="store_true", help="只推送，不触发编译")
     args = ap.parse_args()
 

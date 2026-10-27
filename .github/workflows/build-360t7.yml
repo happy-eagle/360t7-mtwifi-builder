@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       device:
-        description: "device id（默认 mt7981-360-t7-108M）"
+        description: "device id（默认 qihoo_360t7）"
         required: false
-        default: "mt7981-360-t7-108M"
+        default: "qihoo_360t7"
   push:
     branches: [main]
     paths:
@@ -19,7 +19,7 @@ permissions:
 env:
   SRC_REPO: "https://github.com/padavanonly/immortalwrt-mt798x-24.10"
   SRC_BRANCH: "openwrt-24.10-6.6"
-  DEVICE: ${{ inputs.device || 'mt7981-360-t7-108M' }}
+  DEVICE: ${{ inputs.device || 'qihoo_360t7' }}
 
 jobs:
   build:
