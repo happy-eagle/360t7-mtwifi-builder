@@ -63,6 +63,8 @@ def main():
     ap.add_argument("--private", action="store_true", help="建私有仓库（默认公开，公开仓库 Actions 不限时长）")
     ap.add_argument("--branch", default="main")
     ap.add_argument("--device", default="qihoo_360t7", help="传给 workflow 的设备 id")
+    ap.add_argument("--variant", default="plain", choices=["plain", "openclash"],
+                    help="固件变体：plain（纯净）或 openclash（带 OpenClash 插件）")
     ap.add_argument("--no-build", action="store_true", help="只推送，不触发编译")
     args = ap.parse_args()
 
@@ -151,11 +153,12 @@ def main():
 
     if not run_url:
         code, res = api("POST", f"/repos/{login}/{args.repo}/actions/workflows/{wf}/dispatches", token,
-                        {"ref": args.branch, "inputs": {"device": args.device}}, ok=(204,))
+                        {"ref": args.branch,
+                         "inputs": {"device": args.device, "variant": args.variant}}, ok=(204,))
         if code != 204:
             die(f"触发失败 (HTTP {code}): {res.get('message')}\n"
                 f"  检查 .github/workflows/{wf} 是否已在 {args.branch} 分支上")
-        print(f"[5/5] 已触发编译，等待 runner 接单…")
+        print(f"[5/5] 已触发编译（variant={args.variant}），等待 runner 接单…")
 
         for _ in range(30):
             time.sleep(6)

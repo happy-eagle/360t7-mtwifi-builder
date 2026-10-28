@@ -67,6 +67,7 @@ endef
 ```bash
 # 在 360t7-mtwifi-builder 目录下
 GITHUB_TOKEN=ghp_xxxxxxxx python publish.py
+GITHUB_TOKEN=ghp_xxxxxxxx python publish.py --variant openclash   # 带 OpenClash
 ```
 
 脚本会依次：建仓库 → 提交推送 → 放开 Actions 写权限 → 触发编译 → 打印运行链接。token 只存在于环境变量里，不写入 `.git/config`，不落地任何文件。
@@ -105,6 +106,24 @@ sha256sums
 ```
 
 以 `bin/targets/mediatek/filogic/` 里实际产物为准（workflow 会把所有含 `360` 的文件都收走）。
+
+## 两种变体
+
+`variant` 参数控制是否带 OpenClash，其余配置完全一致：
+
+| 变体 | 内容 | 额外依赖 | 编译时长 |
+|---|---|---|---|
+| `plain`（默认） | 纯净版，只有 mt_wifi + HNAT + WARP + LuCI | — | ~40 分钟 |
+| `openclash` | 在上面基础上加 `luci-app-openclash` 0.48.002 | `dnsmasq-full`、`ruby`、`kmod-tun`、`kmod-inet-diag`、`kmod-nft-tproxy`、`luci-compat`、`ip-full`、`unzip` | ~55 分钟 |
+
+`openclash` 变体做的事（`scripts/add-openclash.sh`）：
+
+1. 往 `feeds.conf.default` 加 `src-git openclash https://github.com/vernesong/OpenClash.git;master`
+2. `feeds update/install` 之后，往 `.config` 追加 `luci-app-openclash=y` 及其依赖
+3. **显式把 `CONFIG_PACKAGE_dnsmasq` 关掉**——`dnsmasq-full` 与 `dnsmasq` 冲突，只靠 kconfig 的 CONFLICTS 推导不可靠
+4. `make defconfig` 之后由工作流逐项校验 8 个符号，缺一个就红叉
+
+两个变体可以同时跑（各自独立的 run），Release tag 带变体后缀，不会互相覆盖。
 
 ## 刷机流程
 
