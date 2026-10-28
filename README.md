@@ -123,6 +123,12 @@ sha256sums
 3. **显式把 `CONFIG_PACKAGE_dnsmasq` 关掉**——`dnsmasq-full` 与 `dnsmasq` 冲突，只靠 kconfig 的 CONFLICTS 推导不可靠
 4. `make defconfig` 之后由工作流逐项校验 8 个符号，缺一个就红叉
 
+### ruby 是 openclash 变体的耗时大头
+
+`ruby` 的构建系统**并行不安全**，直接 `make -j` 会随机失败。工作流的做法是先用 `make -j1` 单独编掉 ruby，再并行编其余部分——这样既避开 race，又不用把整个编译降级成单线程。
+
+**不要加 `make -j1` 兜底。** 单线程重编整个 OpenWrt 要 4 小时以上，一旦触发就是“看起来没卡死，实际在爬行”。编译失败就该红叉，日志由 `Upload build log on failure` 步骤交出来。
+
 两个变体可以同时跑（各自独立的 run），Release tag 带变体后缀，不会互相覆盖。
 
 ### 内核直接打进固件
