@@ -144,20 +144,27 @@ jobs:
           cd openwrt
           : > build.log
 
-          # ruby 的构建系统并行不安全，直接 -j 会随机失败。
-          # 先单线程把它编掉，后面的并行 make 会跳过已完成的包。
-          RUBY_PKG=""
-          if [ -d feeds/packages/lang/ruby ]; then
-            RUBY_PKG="package/feeds/packages/ruby"
-          elif [ -d package/lang/ruby ]; then
-            RUBY_PKG="package/lang/ruby"
-          fi
-          if [ -n "$RUBY_PKG" ] && grep -q '^CONFIG_PACKAGE_ruby=y' .config; then
-            echo "=== 预编译 ruby（-j1，规避并行 race）: $RUBY_PKG ==="
-            make -j1 "$RUBY_PKG/compile" V=s 2>&1 | tee -a build.log | tail -n 60
-            echo "=== ruby 预编译完成 ==="
+          # 单独 make <pkg>/compile 不会完成 toolchain 的 install 阶段，
+          # 会因 staging_dir 里缺 ld-musl-*.so 直接失败。必须先显式编工具链。
+          echo "=== 编译工具链 ==="
+          if make -j"$(nproc)" toolchain/install 2>&1 | tee -a build.log | tail -n 25; then
+
+            # ruby 的构建系统并行不安全，先单线程编掉，后面的并行 make 会跳过已完成的部分。
+            RUBY_PKG=""
+            if [ -d feeds/packages/lang/ruby ]; then
+              RUBY_PKG="package/feeds/packages/ruby"
+            elif [ -d package/lang/ruby ]; then
+              RUBY_PKG="package/lang/ruby"
+            fi
+            if [ -n "$RUBY_PKG" ] && grep -q '^CONFIG_PACKAGE_ruby=y' .config; then
+              echo "=== 预编译 ruby（-j1，规避并行 race）: $RUBY_PKG ==="
+              make -j1 "$RUBY_PKG/compile" V=s 2>&1 | tee -a build.log | tail -n 60
+              echo "=== ruby 预编译完成 ==="
+            else
+              echo "=== 未选中 ruby，跳过预编译 ==="
+            fi
           else
-            echo "=== 未选中 ruby，跳过预编译 ==="
+            echo "::warning::toolchain/install 未成功，跳过 ruby 预编译，直接全量并行编译"
           fi
 
           # 不要用 -j1 兜底：单线程重编整个 OpenWrt 要 4 小时以上，
