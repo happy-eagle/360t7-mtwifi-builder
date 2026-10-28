@@ -128,25 +128,45 @@ def main():
         return
 
     # 5. 触发 workflow
+    # push 事件本身也会触发一次（workflow 里配了 push 触发），
+    # 所以先看这次 push 有没有已经在跑的 run，避免同一次提交编两遍。
     wf = "build-360t7.yml"
-    code, res = api("POST", f"/repos/{login}/{args.repo}/actions/workflows/{wf}/dispatches", token,
-                    {"ref": args.branch, "inputs": {"device": args.device}}, ok=(204,))
-    if code != 204:
-        die(f"触发失败 (HTTP {code}): {res.get('message')}\n"
-            f"  检查 .github/workflows/{wf} 是否已在 {args.branch} 分支上")
-    print(f"[5/5] 已触发编译，等待 runner 接单…")
+    head_sha = run(["rev-parse", "HEAD"], root)
 
     run_url = None
-    for _ in range(30):
-        time.sleep(6)
+    for _ in range(8):
+        time.sleep(3)
         code, runs = api("GET",
-                         f"/repos/{login}/{args.repo}/actions/workflows/{wf}/runs?per_page=1",
+                         f"/repos/{login}/{args.repo}/actions/workflows/{wf}/runs?per_page=10",
                          token)
-        if code == 200 and runs.get("workflow_runs"):
-            r = runs["workflow_runs"][0]
-            if r["status"] in ("queued", "in_progress", "completed"):
+        if code != 200:
+            continue
+        for r in runs.get("workflow_runs", []):
+            if r.get("head_sha") == head_sha and r["status"] in ("queued", "in_progress"):
                 run_url = r["html_url"]
+                print(f"[5/5] 本次 push 已自动触发编译，跳过手动 dispatch（避免重复编译）")
                 break
+        if run_url:
+            break
+
+    if not run_url:
+        code, res = api("POST", f"/repos/{login}/{args.repo}/actions/workflows/{wf}/dispatches", token,
+                        {"ref": args.branch, "inputs": {"device": args.device}}, ok=(204,))
+        if code != 204:
+            die(f"触发失败 (HTTP {code}): {res.get('message')}\n"
+                f"  检查 .github/workflows/{wf} 是否已在 {args.branch} 分支上")
+        print(f"[5/5] 已触发编译，等待 runner 接单…")
+
+        for _ in range(30):
+            time.sleep(6)
+            code, runs = api("GET",
+                             f"/repos/{login}/{args.repo}/actions/workflows/{wf}/runs?per_page=1",
+                             token)
+            if code == 200 and runs.get("workflow_runs"):
+                r = runs["workflow_runs"][0]
+                if r["status"] in ("queued", "in_progress", "completed"):
+                    run_url = r["html_url"]
+                    break
 
     print()
     print("=" * 68)

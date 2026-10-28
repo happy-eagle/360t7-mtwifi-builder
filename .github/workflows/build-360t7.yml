@@ -55,6 +55,12 @@ jobs:
           grep -nE '^(define Device/|TARGET_DEVICES \+=).*360' \
             target/linux/mediatek/image/filogic.mk || echo "（没找到，后面会失败）"
 
+      - name: Patch device definition (UBI factory image)
+        run: |
+          cd openwrt
+          python3 "$GITHUB_WORKSPACE/scripts/patch-filogic-mk.py" \
+            target/linux/mediatek/image/filogic.mk "$DEVICE" 108
+
       - name: Update feeds
         run: |
           cd openwrt
@@ -101,6 +107,27 @@ jobs:
           echo "===== 收集到的产物 ====="
           ls -lh out/
           test -n "$(ls -A out)" || { echo "::error::没有产出任何固件"; exit 1; }
+
+          echo "===== factory 镜像校验 ====="
+          FACTORY="$(ls out/*factory* 2>/dev/null | head -1 || true)"
+          if [ -z "$FACTORY" ]; then
+            echo "::error::没有 factory.bin —— uboot 恢复页无法刷机"
+            exit 1
+          fi
+          MAGIC="$(head -c 4 "$FACTORY" | od -An -tx1 | tr -d ' \n')"
+          echo "factory 镜像: $FACTORY"
+          echo "头部 magic: $MAGIC"
+          if [ "$MAGIC" != "55424923" ]; then
+            echo "::error::factory 镜像不是 UBI 格式（期望 55424923 = 'UBI#'，实际 $MAGIC）"
+            exit 1
+          fi
+          SZ=$(stat -c %s "$FACTORY")
+          echo "大小: $SZ 字节 ($((SZ/1024/1024)) MiB)"
+          if [ "$SZ" -gt 113246208 ]; then
+            echo "::error::factory 镜像超过 ubi 分区 0x6c00000 (113246208 字节)"
+            exit 1
+          fi
+          echo "factory 镜像格式与尺寸校验通过"
 
       - name: Upload build log on failure
         if: failure()

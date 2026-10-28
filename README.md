@@ -12,9 +12,53 @@
 | 设备 id | **`qihoo_360t7`** | `filogic.mk:1861` `define Device/qihoo_360t7` |
 | 加速 | `kmod-mediatek_hnat` + WARP v2 + `MTK_MT7981_NEW_FW` | 同一 defconfig |
 
-**关键结论：不需要改 dts，不需要自己写设备定义。** 这个 fork 自带的 mt7981 defconfig 里 `kmod-mt_wifi=y`、没有 `kmod-mt7915e`，`qihoo_360t7` 的 dts（`mt7981b-qihoo-360t7`）本身就是 108M ubi 布局。这套流水线做的事就是把它单独拎出来编译，省掉其余十几个机型的编译时间。
+**关键结论：不需要改 dts。** 这个 fork 自带的 mt7981 defconfig 里 `kmod-mt_wifi=y`、没有 `kmod-mt7915e`，`qihoo_360t7` 的 dts（`mt7981b-qihoo-360t7`）本身就是 108M ubi 布局。这套流水线做的事是：把它单独拎出来编译，省掉其余十几个机型的时间；**并补上源码里缺失的 factory 镜像定义**（见下节）。
 
 > ⚠️ 仓库 `defconfig/mt7981-ax3000.config` 里原本写的是 `CONFIG_TARGET_DEVICE_..._mt7981-360-t7-108M`，这是**过期符号**（沿袭 hanwckf 21.02 的命名），当前 `openwrt-24.10-6.6` 分支源码树里不存在。`make defconfig` 会静默丢弃它，必须改成 `qihoo_360t7`。这个问题已在第一次实跑时被校验脚本拦下（run 40462376449）。
+
+## 为什么原来源码不产出 factory.bin
+
+源码里 `Device/qihoo_360t7` 只有一行镜像定义：
+
+```makefile
+define Device/qihoo_360t7
+  ...
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+```
+
+没有 `IMAGES += factory.bin`，也没有 `IMAGE/factory.bin`，所以 `bin/targets/` 里只会出现一个 `sysupgrade.bin`。
+
+而且这个 `sysupgrade.bin` 是 `sysupgrade-tar` 产物——**它是个 tar 归档，不是可烧写的 UBI 镜像**。实测头部：
+
+```
+00000000: 7379 7375 7067 7261 6465 2d71 6968 6f6f  sysupgrade-qihoo
+00000010: 5f33 3630 7437 2f                        _360t7/
+```
+
+这种 tar 只能被系统内的 `sysupgrade` 命令消费，uboot 恢复页刷不了。
+
+更麻烦的是同一个段落还缺 `KERNEL_IN_UBI`，而 dts 里没有独立的 `kernel` mtd 分区（只有 `bl2 / u-boot-env / Factory / fip / ubi / config / factory / log`）。没有 kernel 落点，`nand_do_upgrade` 升级时找不到该往哪写内核。
+
+**根因一句话：这个设备定义是从别处抄过来没补全的半成品。**
+
+## 补丁做了什么
+
+`scripts/patch-filogic-mk.py` 在编译前按同 fork 内 `abt_asr3000`、`cetron_ct3003`、`cmcc_a10-stock` 的既有写法补齐：
+
+```makefile
+  UBINIZE_OPTS := -E 5
+  KERNEL_IN_UBI := 1
+  IMAGE_SIZE := 110592k
+  IMAGES += factory.bin
+  IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
+```
+
+`110592k` = 108 MiB，等于 dts 里 ubi 分区 `0x6c00000`。脚本是幂等的（已补过就跳过），设备名对不上会打印源码树里所有可用设备后退出。
+
+产物里的 `factory.bin` 是 UBI 格式，头部 magic 为 `UBI#`（`55424923`）。工作流在收集产物阶段会校验这一点，格式不对或超过 113246208 字节直接红叉。
 
 ## 怎么用
 
@@ -62,15 +106,28 @@ sha256sums
 
 以 `bin/targets/mediatek/filogic/` 里实际产物为准（workflow 会把所有含 `360` 的文件都收走）。
 
-## 刷机前提
+## 刷机流程
 
 `qihoo_360t7` = **108M ubi 分区**布局，对应 dts 里 `ubi` 从 `0x580000` 起、长度 `0x6c00000`。
 
-**原厂 uboot 起不来这个固件。** 必须先刷支持 108M 分区的改版 uboot（hanwckf 的 `bl-mt798x` 或同类的 7981 multi-layout uboot），再从 uboot 的 web 恢复页刷 `factory.bin`，之后升级走 `sysupgrade.bin`。
+**原厂 uboot 起不来这个固件。** 顺序如下：
+
+1. 刷支持 108M 分区的改版 uboot（hanwckf 的 `bl-mt798x` 或同类 7981 multi-layout uboot），用 TTL / 编程器 / 原厂漏洞。
+2. 进 uboot web 恢复页（通常按住 reset 上电，访问 `192.168.1.1`）。
+3. 上传 **`factory.bin`**（UBI 镜像），写进 ubi 分区。
+4. 重启进系统，之后升级用 `sysupgrade.bin`。
+
+`initramfs-kernel.bin` 可以先在内存里试跑，不动闪存——不确定无线是否正常时，先用它验证再落地。
 
 不想动 bootloader 就别用这个，去用 hanwckf 21.02 线的 36M 版本。
 
-## 校验脚本干了什么
+## 三个脚本分工
+
+| 脚本 | 阶段 | 作用 |
+|---|---|---|
+| `patch-filogic-mk.py` | 拉源码后 | 给 `Device/qihoo_360t7` 补 `KERNEL_IN_UBI` / `IMAGE_SIZE` / `UBINIZE_OPTS` / `factory.bin` |
+| `prepare-config.sh` | 配 config | 复制仓库 defconfig，关掉其余十几个机型，只留目标设备 |
+| `verify-config.sh` | 编译前 | 校验 7 项开关，不对就红叉 |
 
 `scripts/verify-config.sh` 在 `make defconfig` 之后强制检查 7 项，任一项不对就红叉退出，并在日志里打印源码树中所有含 `360` 的设备定义和 `.config` 里所有可用设备。这是防 defconfig 里的设备符号跟源码树对不上（符号失效时 `make defconfig` 会静默丢弃，最后编译出一堆空产物）。
 
