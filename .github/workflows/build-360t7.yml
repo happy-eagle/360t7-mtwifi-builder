@@ -65,6 +65,14 @@ jobs:
           python3 "$GITHUB_WORKSPACE/scripts/patch-filogic-mk.py" \
             target/linux/mediatek/image/filogic.mk "$DEVICE" 108
 
+      - name: Bundle clash core into rootfs
+        if: env.VARIANT == 'openclash'
+        run: |
+          cd openwrt
+          bash "$GITHUB_WORKSPACE/scripts/fetch-core.sh" files/etc/openclash/core meta
+          echo "===== files/ 树 ====="
+          find files -type f -exec ls -l {} \;
+
       - name: Add OpenClash feed
         if: env.VARIANT == 'openclash'
         run: |
@@ -112,6 +120,17 @@ jobs:
               exit 1
             fi
             echo "[ OK ] dnsmasq 已让位给 dnsmasq-full"
+
+            echo "===== 内置内核校验 ====="
+            CORE="files/etc/openclash/core/clash_meta"
+            [ -f "$CORE" ] || { echo "::error::内核未放入 $CORE"; exit 1; }
+            CMAGIC=$(od -An -tx1 -j0 -N4 "$CORE" | tr -d ' \n')
+            CMACH=$(od -An -tx1 -j18 -N2 "$CORE" | tr -d ' \n')
+            CSZ=$(stat -c %s "$CORE")
+            echo "  $CORE  $((CSZ/1024/1024)) MB  magic=$CMAGIC machine=$CMACH"
+            [ "$CMAGIC" = "7f454c46" ] || { echo "::error::内核不是 ELF"; exit 1; }
+            [ "$CMACH" = "b700" ] || { echo "::error::内核架构不是 AArch64（machine=$CMACH）"; exit 1; }
+            echo "[ OK ] 内核为 AArch64，将随固件打包"
           fi
 
       - name: Download packages

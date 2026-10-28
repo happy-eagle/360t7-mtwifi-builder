@@ -114,7 +114,7 @@ sha256sums
 | 变体 | 内容 | 额外依赖 | 编译时长 |
 |---|---|---|---|
 | `plain`（默认） | 纯净版，只有 mt_wifi + HNAT + WARP + LuCI | — | ~40 分钟 |
-| `openclash` | 在上面基础上加 `luci-app-openclash` 0.48.002 | `dnsmasq-full`、`ruby`、`kmod-tun`、`kmod-inet-diag`、`kmod-nft-tproxy`、`luci-compat`、`ip-full`、`unzip` | ~55 分钟 |
+| `openclash` | 在上面基础上加 `luci-app-openclash` 0.48.002 + **内置 AArch64 内核** | `dnsmasq-full`、`ruby`、`kmod-tun`、`kmod-inet-diag`、`kmod-nft-tproxy`、`luci-compat`、`ip-full`、`unzip` | ~90 分钟 |
 
 `openclash` 变体做的事（`scripts/add-openclash.sh`）：
 
@@ -124,6 +124,27 @@ sha256sums
 4. `make defconfig` 之后由工作流逐项校验 8 个符号，缺一个就红叉
 
 两个变体可以同时跑（各自独立的 run），Release tag 带变体后缀，不会互相覆盖。
+
+### 内核直接打进固件
+
+`luci-app-openclash` 是 `PKGARCH:=all` 的纯脚本包，**不含内核二进制**（`root/etc/openclash/` 下只有 `custom/`、`overwrite/`、`rule_provider/`、`Country.mmdb`）。官方设计是首次启动时从 `raw.githubusercontent.com` 下载——国内基本下不动。
+
+所以 `openclash` 变体在编译时就把内核塞进去：
+
+```
+openwrt/files/etc/openclash/core/clash_meta     # 权限 4755，AArch64
+```
+
+由 `scripts/fetch-core.sh` 完成：
+
+1. 从 `https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz` 下载，失败自动切 jsdelivr CDN
+2. 解包取 `clash`，校验 ELF 头：`7f454c46` / 64 位 / `machine=b700`（AArch64）
+3. 装到 `files/etc/openclash/core/clash_meta`，权限 4755
+4. 工作流在 `Verify config` 阶段再独立复核一次架构，不对就红叉
+
+刷完机 OpenClash 直接可用，不需要碰命令行。代价是固件大约多 8~10 MB（squashfs 压缩后）。
+
+**注意**：内核版本固定在编译那一刻。想换内核版本，重跑一次编译即可（`fetch-core.sh` 拉的是 `core` 分支的当前产物）。
 
 ## 刷机流程
 
