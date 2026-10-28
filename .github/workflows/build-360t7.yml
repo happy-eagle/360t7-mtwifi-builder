@@ -144,32 +144,14 @@ jobs:
           cd openwrt
           : > build.log
 
-          # 单独 make <pkg>/compile 不会完成 toolchain 的 install 阶段，
-          # 会因 staging_dir 里缺 ld-musl-*.so 直接失败。必须先显式编工具链。
-          echo "=== 编译工具链 ==="
-          if make -j"$(nproc)" toolchain/install 2>&1 | tee -a build.log | tail -n 25; then
-
-            # ruby 的构建系统并行不安全，先单线程编掉，后面的并行 make 会跳过已完成的部分。
-            RUBY_PKG=""
-            if [ -d feeds/packages/lang/ruby ]; then
-              RUBY_PKG="package/feeds/packages/ruby"
-            elif [ -d package/lang/ruby ]; then
-              RUBY_PKG="package/lang/ruby"
-            fi
-            if [ -n "$RUBY_PKG" ] && grep -q '^CONFIG_PACKAGE_ruby=y' .config; then
-              echo "=== 预编译 ruby（-j1，规避并行 race）: $RUBY_PKG ==="
-              make -j1 "$RUBY_PKG/compile" V=s 2>&1 | tee -a build.log | tail -n 60
-              echo "=== ruby 预编译完成 ==="
-            else
-              echo "=== 未选中 ruby，跳过预编译 ==="
-            fi
-          else
-            echo "::warning::toolchain/install 未成功，跳过 ruby 预编译，直接全量并行编译"
-          fi
-
-          # 不要用 -j1 兜底：单线程重编整个 OpenWrt 要 4 小时以上，
-          # 失败就该红叉并把日志交出来，而不是把 40 分钟的活拖成半天。
-          echo "=== 并行编译其余部分 -j$(($(nproc)+1)) ==="
+          # 不要试图用 make <pkg>/compile 单独预编译某个包（比如 ruby）：
+          # 这条路会连带编译 kernel 模块，而 kernel 的 .config 只在 target/compile
+          # 的 prepare 阶段生成，结果是 "No rule to make target .../linux-6.6.133/.config"。
+          # 老老实实全量并行编译。
+          #
+          # 也不要加 -j1 兜底：并行失败后单线程重编整个 OpenWrt 要 4 小时以上，
+          # 看起来没死其实在爬。失败就该红叉，日志由 Upload build log on failure 交出来。
+          echo "=== 全量并行编译 -j$(($(nproc)+1)) ==="
           make -j"$(( $(nproc) + 1 ))" 2>&1 | tee -a build.log
 
       - name: Collect artifacts

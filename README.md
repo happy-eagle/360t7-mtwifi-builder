@@ -123,11 +123,22 @@ sha256sums
 3. **显式把 `CONFIG_PACKAGE_dnsmasq` 关掉**——`dnsmasq-full` 与 `dnsmasq` 冲突，只靠 kconfig 的 CONFLICTS 推导不可靠
 4. `make defconfig` 之后由工作流逐项校验 8 个符号，缺一个就红叉
 
-### ruby 是 openclash 变体的耗时大头
+### 不要试图单独预编译某个包
 
-`ruby` 的构建系统**并行不安全**，直接 `make -j` 会随机失败。工作流的做法是先用 `make -j1` 单独编掉 ruby，再并行编其余部分——这样既避开 race，又不用把整个编译降级成单线程。
+`make <pkg>/compile` 在 OpenWrt 里**走不通**，两次实测都失败：
 
-**不要加 `make -j1` 兜底。** 单线程重编整个 OpenWrt 要 4 小时以上，一旦触发就是“看起来没卡死，实际在爬行”。编译失败就该红叉，日志由 `Upload build log on failure` 步骤交出来。
+| 尝试 | 报错 |
+|---|---|
+| 直接 `make -j1 package/feeds/packages/ruby/compile` | `cp: cannot stat '.../lib/ld-musl-*.so*'` → `package/libs/toolchain failed to build` |
+| 先 `make toolchain/install` 再编 ruby | `No rule to make target '.../linux-6.6.133/.config'` → `package/kernel/gpio-button-hotplug failed to build` |
+
+第二条是根本原因：单独编包会连带编译 kernel 模块，而 kernel 的 `.config` 只在 `target/compile` 的 prepare 阶段生成。任何"精准打击某个包"的尝试都绕不开这层依赖。
+
+**结论：老老实实全量并行编译。**
+
+### 不要加 `make -j1` 兜底
+
+并行失败后单线程重编整个 OpenWrt 要 4 小时以上，表现为"看起来还在编译，实际在爬行"。编译失败就该红叉，完整日志由 `tee -a build.log` 留档、由 `Upload build log on failure` 上传。
 
 两个变体可以同时跑（各自独立的 run），Release tag 带变体后缀，不会互相覆盖。
 
