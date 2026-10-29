@@ -144,19 +144,12 @@ sha256sums
 |---|---|
 | `luci-app-upnp` + `miniupnpd-nftables` + `luci-i18n-upnp-zh-cn` | 本固件用 firewall4/nftables，**必须**选 nftables 变体；iptables 变体与之 `CONFLICTS` |
 | `luci-theme-argon` + `luci-app-argon-config` + `luci-i18n-argon-config-zh-cn` | ImmortalWrt 官方 24.10 维护，带 `ucode/template/themes/argon/*.ut`，保证可用 |
-| `luci-theme-design` | 第三方，见下 |
 
-**design 主题的坑**：`0x676e67` 和 `papagaye744` 那两版只有 `luasrc/view/themes/design/*.htm`，是 Lua 时代的模板机制。LuCI 24.10 只认 `ucode/template/themes/<name>/*.ut`，装上去**白屏**。
+**不加 design 主题**：`0x676e67` 和 `papagaye744` 那两个主流版本只有 `luasrc/view/themes/design/*.htm`，是 Lua 时代的模板机制。LuCI 24.10 只认 `ucode/template/themes/<name>/*.ut`，装上去**白屏**。
 
-`scripts/add-theme-design.sh` 用的是 `lgs2007m/luci-theme-design` 的 `openwrt-25.12` 分支——它有完整的 ucode 模板和 `menu-design.js`，是能跑的版本。脚本会校验这三个文件存在，缺一个直接失败，不浪费 60 分钟编译。
+唯一能用的是 `lgs2007m/luci-theme-design` 的 `openwrt-25.12` 分支（有完整 ucode 模板），但它面向 25.12，模板 API 与 24.10 有差异，不保证正常。**已放弃，只保留 argon。**
 
-但它面向 OpenWrt 25.12，我们的树是 24.10，模板 API 有细微差异，**不保证 100% 正常**。所以默认主题仍是 `bootstrap`，design 只是装进去备选。万一选完白屏，SSH 里执行：
-
-```sh
-uci set luci.main.mediaurlbase='/luci-static/bootstrap'
-uci commit luci
-/etc/init.d/uhttpd reload
-```
+刷完机在 LuCI → 系统 → 语言和界面 里切主题，默认是 bootstrap。
 
 
 ### OpenClash 用的是 ImmortalWrt 自带版本，别加上游 feed

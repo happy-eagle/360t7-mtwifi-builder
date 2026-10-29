@@ -46,10 +46,9 @@ done
 #    miniupnpd-nftables：本固件用 firewall4/nftables，必须选 nftables 变体，
 #                         iptables 变体与之 CONFLICTS。
 #    luci-theme-argon：ImmortalWrt 官方 24.10 维护，带 ucode 模板，保证可用。
-#    luci-theme-design：第三方，靠 add-theme-design.sh 克隆进来，可能不渲染（见 README）。
+#    不加 luci-theme-design：主流那几版只有 Lua 的 *.htm 模板，LuCI 24.10 会白屏。
 ADD="luci-app-upnp miniupnpd-nftables luci-i18n-upnp-zh-cn \
-     luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn \
-     luci-theme-design"
+     luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn"
 
 for sym in $ADD; do
   if grep -qE "^CONFIG_PACKAGE_${sym}=y$" .config; then
