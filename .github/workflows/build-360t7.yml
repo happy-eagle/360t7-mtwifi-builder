@@ -73,14 +73,9 @@ jobs:
           echo "===== files/ 树 ====="
           find files -type f -exec ls -l {} \;
 
-      - name: Add OpenClash feed
-        if: env.VARIANT == 'openclash'
-        run: |
-          cd openwrt
-          grep -q 'src-git openclash' feeds.conf.default || \
-            echo "src-git openclash https://github.com/vernesong/OpenClash.git;master" >> feeds.conf.default
-          echo "===== feeds.conf.default ====="
-          cat feeds.conf.default
+      # 不要自己追加 src-git openclash 源：immortalwrt/luci（openwrt-24.10 分支）
+      # 已经自带 applications/luci-app-openclash（0.47.156）。再追加 vernesong 上游源
+      # 只会被 feeds install 的同名包覆盖，白 clone 一次，版本号还会对不上。
 
       - name: Update feeds
         run: |
@@ -107,6 +102,13 @@ jobs:
 
           if [ "$VARIANT" = "openclash" ]; then
             echo "===== OpenClash 校验 ====="
+            OC_MK="package/feeds/luci/luci-app-openclash/Makefile"
+            if [ ! -f "$OC_MK" ]; then
+              echo "::error::找不到 $OC_MK —— luci-app-openclash 应来自 immortalwrt/luci feed"
+              exit 1
+            fi
+            OC_VER="$(grep -m1 '^PKG_VERSION:=' "$OC_MK" | cut -d= -f2 | tr -d ' ')"
+            echo "  luci-app-openclash 版本: ${OC_VER}（来自 immortalwrt/luci @ openwrt-24.10）"
             for sym in luci-app-openclash dnsmasq-full kmod-tun kmod-inet-diag kmod-nft-tproxy luci-compat ruby ip-full; do
               if grep -q "^CONFIG_PACKAGE_${sym}=y$" .config; then
                 echo "[ OK ] ${sym}"

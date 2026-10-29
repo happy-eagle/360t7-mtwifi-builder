@@ -32,6 +32,17 @@ check "WARP v2"                    "^CONFIG_MTK_WARP_V2=y" y
 check "硬件 NAT kmod-mediatek_hnat" "^CONFIG_PACKAGE_kmod-mediatek_hnat=y" y
 check "开源驱动 kmod-mt7915e 未启用" "^CONFIG_PACKAGE_kmod-mt7915e=y" n
 
+# 闭源方案用不上的包：理想状态是被裁掉。若被别的包 DEPENDS 硬拉回来，
+# kconfig 会自动重新选中，这里只告警，不判失败。
+echo "----- 裁剪检查（告警级） -----"
+for sym in wpad-openssl kmod-usb-xhci-mtk; do
+  if grep -qE "^CONFIG_PACKAGE_${sym}=y$" .config; then
+    echo "[WARN] ${sym} 仍被启用 —— 大概率被其他包依赖硬拉回来，裁不掉"
+  else
+    echo "[ OK ] ${sym} 已裁掉"
+  fi
+done
+
 if [ "$FAIL" -ne 0 ]; then
   echo
   echo "===== 源码树里 360 相关的设备定义 ====="

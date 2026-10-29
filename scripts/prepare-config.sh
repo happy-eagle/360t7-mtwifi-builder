@@ -23,3 +23,21 @@ fi
 
 echo "===== 目标设备: ${DEVICE} ====="
 grep -E "^CONFIG_TARGET_DEVICE_mediatek_filogic_DEVICE_.*=y$" .config || echo "（没有选中任何设备）"
+
+# 3. 裁掉闭源驱动方案里用不上的包（能省约 1.7MB flash）
+#    wpad/hostapd：闭源 mt_wifi 自己接管 AP，根本不走 hostapd。
+#                  装了只会让 /etc/init.d/wpad 开机报错刷日志。
+#    kmod-usb-xhci-mtk：360T7 没有 USB 口。
+# 注意：如果这些包是被别的包 DEPENDS 硬拉进来的，make defconfig 会自动把它们
+# 加回来，这里不报错——verify-config.sh 会用 warning 提示，不影响编译。
+TRIM="wpad-openssl wpad-basic-mbedtls wpad-mbedtls hostapd hostapd-common kmod-usb-xhci-mtk"
+for sym in $TRIM; do
+  sed -i -E "s|^CONFIG_PACKAGE_${sym}=y$|# CONFIG_PACKAGE_${sym} is not set|" .config
+  grep -qE "^# CONFIG_PACKAGE_${sym} is not set$" .config || \
+    echo "# CONFIG_PACKAGE_${sym} is not set" >> .config
+done
+
+echo "===== 已请求裁掉的包 ====="
+for sym in $TRIM; do
+  grep -E "^# CONFIG_PACKAGE_${sym} is not set$" .config >/dev/null && echo "  - ${sym}"
+done

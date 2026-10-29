@@ -1,0 +1,7 @@
+# CI 在 Linux 上跑 bash，CRLF 会让 shebang 直接报 "bad interpreter"。
+# 统一按 LF 存储和检出，别依赖 Windows 本地的 core.autocrlf。
+* text=auto eol=lf
+*.sh   text eol=lf
+*.yml  text eol=lf
+*.py   text eol=lf
+*.md   text eol=lf

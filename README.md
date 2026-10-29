@@ -113,15 +113,34 @@ sha256sums
 
 | 变体 | 内容 | 额外依赖 | 编译时长 |
 |---|---|---|---|
-| `plain`（默认） | 纯净版，只有 mt_wifi + HNAT + WARP + LuCI | — | ~40 分钟 |
-| `openclash` | 在上面基础上加 `luci-app-openclash` 0.48.002 + **内置 AArch64 内核** | `dnsmasq-full`、`ruby`、`kmod-tun`、`kmod-inet-diag`、`kmod-nft-tproxy`、`luci-compat`、`ip-full`、`unzip` | ~90 分钟 |
+| `plain`（默认） | 纯净版，只有 mt_wifi + HNAT + WARP + LuCI | — | ~80 分钟 |
+| `openclash` | 在上面基础上加 `luci-app-openclash` 0.47.156 + **内置 AArch64 内核** | `dnsmasq-full`、`ruby`、`kmod-tun`、`kmod-inet-diag`、`kmod-nft-tproxy`、`luci-compat`、`ip-full`、`unzip` | ~170 分钟 |
 
 `openclash` 变体做的事（`scripts/add-openclash.sh`）：
 
-1. 往 `feeds.conf.default` 加 `src-git openclash https://github.com/vernesong/OpenClash.git;master`
-2. `feeds update/install` 之后，往 `.config` 追加 `luci-app-openclash=y` 及其依赖
+1. 检查 `package/feeds/luci/luci-app-openclash` 存在（来自 `immortalwrt/luci` feed），并打印实际版本号
+2. 往 `.config` 追加 `luci-app-openclash=y` 及其 12 个依赖
 3. **显式把 `CONFIG_PACKAGE_dnsmasq` 关掉**——`dnsmasq-full` 与 `dnsmasq` 冲突，只靠 kconfig 的 CONFLICTS 推导不可靠
-4. `make defconfig` 之后由工作流逐项校验 8 个符号，缺一个就红叉
+4. `make defconfig` 之后由工作流逐项校验 8 个符号 + 包版本，缺一个就红叉
+
+### 裁掉闭源方案用不上的包
+
+`scripts/prepare-config.sh` 会在选完设备后显式关掉这几个包，省约 1.7MB flash：
+
+| 包 | 为什么裁 |
+|---|---|
+| `wpad-openssl` / `wpad-basic-mbedtls` / `wpad-mbedtls` / `hostapd` / `hostapd-common` | 闭源 `mt_wifi` 自己接管 AP，不走 hostapd。装了只会让 `/etc/init.d/wpad` 开机报错刷日志 |
+| `kmod-usb-xhci-mtk` | 360T7 没有 USB 口 |
+
+如果某个包是被其他包 `DEPENDS` 硬拉进来的，`make defconfig` 会自动把它加回来——`verify-config.sh` 用 `[WARN]` 提示，**不判失败**，编译照常进行。
+
+### OpenClash 用的是 ImmortalWrt 自带版本，别加上游 feed
+
+`immortalwrt/luci` 的 `openwrt-24.10` 分支**自带** `applications/luci-app-openclash`，`PKG_VERSION:=0.47.156`。
+
+之前踩过的坑：workflow 里追加了 `src-git openclash https://github.com/vernesong/OpenClash.git;master`（上游此时是 0.48.002），结果 `feeds install -a` 时 luci feed 先占位，上游那份被同名包覆盖——编出来的还是 0.47.156，白 clone 一次。
+
+**结论：不要加那个 feed。** 想要上游 0.48.002 的话，得在 `feeds install -a` 之前 `rm -rf feeds/luci/applications/luci-app-openclash` 强制让上游版胜出，但上游版没在本树验证过，不建议。
 
 ### 不要试图单独预编译某个包
 
@@ -159,7 +178,7 @@ openwrt/files/etc/openclash/core/clash_meta     # 权限 4755，AArch64
 3. 装到 `files/etc/openclash/core/clash_meta`，权限 4755
 4. 工作流在 `Verify config` 阶段再独立复核一次架构，不对就红叉
 
-刷完机 OpenClash 直接可用，不需要碰命令行。代价是固件大约多 8~10 MB（squashfs 压缩后）。
+刷完机 OpenClash 直接可用，不需要碰命令行。实测代价：factory.bin 从 19.88 MB 涨到 **42.62 MB**（+22.7 MB），其中内核约 6~7 MB、ruby 3.3 运行时约 8 MB、其余是 openclash 脚本与 ip-full 等依赖。
 
 **注意**：内核版本固定在编译那一刻。想换内核版本，重跑一次编译即可（`fetch-core.sh` 拉的是 `core` 分支的当前产物）。
 

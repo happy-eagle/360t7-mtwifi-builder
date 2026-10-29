@@ -1,9 +1,21 @@
 #!/usr/bin/env bash
 # 在 openwrt/ 目录下、make defconfig 之前执行：追加 OpenClash 及其依赖
-# 依赖清单来自 luci-app-openclash 的 Makefile（PKG_VERSION 0.48.002）
+#
+# 包来源：immortalwrt/luci 的 openwrt-24.10 分支自带 applications/luci-app-openclash，
+# PKG_VERSION 0.47.156。不需要额外加 vernesong 上游 feed —— 同名包会被 luci feed 覆盖。
+# 依赖清单取自该 Makefile 的 DEPENDS：
+#   +luci-compat +dnsmasq-full +bash +curl +ca-bundle +ip-full +ruby
+#   +ruby-yaml +kmod-inet-diag +kmod-nft-tproxy +kmod-tun +unzip
 set -euo pipefail
 
 [ -f .config ] || { echo "找不到 .config，先跑 prepare-config.sh"; exit 1; }
+
+OC_MK="package/feeds/luci/luci-app-openclash/Makefile"
+[ -f "$OC_MK" ] || {
+  echo "错误: 找不到 $OC_MK —— feeds install 没把 luci-app-openclash 装进来"
+  exit 1
+}
+echo "[INFO] luci-app-openclash $(grep -m1 '^PKG_VERSION:=' "$OC_MK" | cut -d= -f2 | tr -d ' ') <- $OC_MK"
 
 if grep -q '^CONFIG_PACKAGE_luci-app-openclash=y$' .config; then
   echo "[SKIP] .config 里已有 OpenClash，不重复追加"
