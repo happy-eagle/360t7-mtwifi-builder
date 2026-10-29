@@ -41,3 +41,25 @@ echo "===== 已请求裁掉的包 ====="
 for sym in $TRIM; do
   grep -E "^# CONFIG_PACKAGE_${sym} is not set$" .config >/dev/null && echo "  - ${sym}"
 done
+
+# 4. 追加 UPnP + 主题
+#    miniupnpd-nftables：本固件用 firewall4/nftables，必须选 nftables 变体，
+#                         iptables 变体与之 CONFLICTS。
+#    luci-theme-argon：ImmortalWrt 官方 24.10 维护，带 ucode 模板，保证可用。
+#    luci-theme-design：第三方，靠 add-theme-design.sh 克隆进来，可能不渲染（见 README）。
+ADD="luci-app-upnp miniupnpd-nftables luci-i18n-upnp-zh-cn \
+     luci-theme-argon luci-app-argon-config luci-i18n-argon-config-zh-cn \
+     luci-theme-design"
+
+for sym in $ADD; do
+  if grep -qE "^CONFIG_PACKAGE_${sym}=y$" .config; then
+    continue
+  fi
+  sed -i -E "s|^# CONFIG_PACKAGE_${sym} is not set$|CONFIG_PACKAGE_${sym}=y|" .config
+  grep -qE "^CONFIG_PACKAGE_${sym}=y$" .config || echo "CONFIG_PACKAGE_${sym}=y" >> .config
+done
+
+echo "===== 已追加的包 ====="
+for sym in $ADD; do
+  grep -qE "^CONFIG_PACKAGE_${sym}=y$" .config && echo "  + ${sym}"
+done

@@ -134,6 +134,31 @@ sha256sums
 
 如果某个包是被其他包 `DEPENDS` 硬拉进来的，`make defconfig` 会自动把它加回来——`verify-config.sh` 用 `[WARN]` 提示，**不判失败**，编译照常进行。
 
+实测结果（run #11）：`wpad*` / `hostapd*` 全部裁掉，`kmod-usb-xhci-mtk` 被拉回来（连 USB 栈共 15 个包），factory.bin 从 19.88MB 降到 19.12MB。
+
+### UPnP 与主题
+
+`prepare-config.sh` 会追加这几项：
+
+| 包 | 说明 |
+|---|---|
+| `luci-app-upnp` + `miniupnpd-nftables` + `luci-i18n-upnp-zh-cn` | 本固件用 firewall4/nftables，**必须**选 nftables 变体；iptables 变体与之 `CONFLICTS` |
+| `luci-theme-argon` + `luci-app-argon-config` + `luci-i18n-argon-config-zh-cn` | ImmortalWrt 官方 24.10 维护，带 `ucode/template/themes/argon/*.ut`，保证可用 |
+| `luci-theme-design` | 第三方，见下 |
+
+**design 主题的坑**：`0x676e67` 和 `papagaye744` 那两版只有 `luasrc/view/themes/design/*.htm`，是 Lua 时代的模板机制。LuCI 24.10 只认 `ucode/template/themes/<name>/*.ut`，装上去**白屏**。
+
+`scripts/add-theme-design.sh` 用的是 `lgs2007m/luci-theme-design` 的 `openwrt-25.12` 分支——它有完整的 ucode 模板和 `menu-design.js`，是能跑的版本。脚本会校验这三个文件存在，缺一个直接失败，不浪费 60 分钟编译。
+
+但它面向 OpenWrt 25.12，我们的树是 24.10，模板 API 有细微差异，**不保证 100% 正常**。所以默认主题仍是 `bootstrap`，design 只是装进去备选。万一选完白屏，SSH 里执行：
+
+```sh
+uci set luci.main.mediaurlbase='/luci-static/bootstrap'
+uci commit luci
+/etc/init.d/uhttpd reload
+```
+
+
 ### OpenClash 用的是 ImmortalWrt 自带版本，别加上游 feed
 
 `immortalwrt/luci` 的 `openwrt-24.10` 分支**自带** `applications/luci-app-openclash`，`PKG_VERSION:=0.47.156`。
