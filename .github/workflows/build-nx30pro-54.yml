@@ -9,6 +9,12 @@ permissions:
 env:
   SRC_REPO: "https://github.com/hanwckf/immortalwrt-mt798x"
   SRC_BRANCH: "openwrt-21.02"
+  # 固定到 run #1 实际使用的提交，避免未来重编时源码/feeds 漂移
+  SRC_COMMIT: "740103d655bcee6da7bc3b49b1cfdfdee4cd5bb6"
+  FEED_PACKAGES_COMMIT: "e09f3c7d1903cfe7f523e209ab3ec778013ba309"
+  FEED_LUCI_COMMIT: "5829eabba50ec0afa17d2ee486bc90dc15180c34"
+  FEED_ROUTING_COMMIT: "a9e43101bb726070cbf81b6225f4a4a5e5"
+  FEED_TELEPHONY_COMMIT: "920fbc5c0a2e4badf51bceff42e9a1e3eb693462"
   DEVICE: "h3c_nx30pro"
 
 jobs:
@@ -36,21 +42,45 @@ jobs:
             python3-distutils rsync swig unzip zlib1g-dev file wget time \
             libelf-dev ecj fastjar java-propose-classpath
 
-      - name: Clone source (hanwckf 5.4)
+      - name: Clone source (hanwckf 5.4, pinned commit)
         run: |
           git clone -b "$SRC_BRANCH" --single-branch --filter=blob:none "$SRC_REPO" openwrt
           cd openwrt
+          git checkout --detach "$SRC_COMMIT"
+          echo "源代码已固定到:"
           git log -1 --format='commit %H  %ci  %s'
+          [ "$(git rev-parse HEAD)" = "$SRC_COMMIT" ] || \
+            { echo "::error::源码 commit 固定失败"; exit 1; }
           echo "--- 内核版本 ---"
           grep -E 'KERNEL_PATCHVER|KERNEL_TESTING_PATCHVER' target/linux/mediatek/Makefile
           echo "--- NX30 Pro 设备定义 ---"
           grep -nE '^(define Device/|TARGET_DEVICES \+=).*nx30' \
             target/linux/mediatek/image/mt7981.mk || { echo "::error::找不到 h3c_nx30pro 设备定义"; exit 1; }
 
-      - name: Update feeds
+      - name: Update feeds (pinned commits)
         run: |
           cd openwrt
+          cat > feeds.conf.default <<EOF
+          src-git-full packages https://github.com/immortalwrt/packages.git^$FEED_PACKAGES_COMMIT
+          src-git-full luci https://github.com/immortalwrt/luci.git^$FEED_LUCI_COMMIT
+          src-git-full routing https://github.com/openwrt/routing.git^$FEED_ROUTING_COMMIT
+          src-git-full telephony https://github.com/openwrt/telephony.git^$FEED_TELEPHONY_COMMIT
+          EOF
+          echo "===== 固定 feeds ====="
+          cat feeds.conf.default
           ./scripts/feeds update -a
+          for feed in packages luci routing telephony; do
+            case "$feed" in
+              packages)  want="$FEED_PACKAGES_COMMIT" ;;
+              luci)      want="$FEED_LUCI_COMMIT" ;;
+              routing)   want="$FEED_ROUTING_COMMIT" ;;
+              telephony) want="$FEED_TELEPHONY_COMMIT" ;;
+            esac
+            got="$(git -C "feeds/$feed" rev-parse HEAD)"
+            echo "$feed @ $got"
+            git -C "feeds/$feed" log -1 --format='  %ci  %s'
+            [ "$got" = "$want" ] || { echo "::error::$feed commit 不匹配: $got != $want"; exit 1; }
+          done
           ./scripts/feeds install -a
 
       - name: Prepare config
@@ -90,12 +120,18 @@ jobs:
           echo "===== 产物目录 ====="
           ls -lh bin/targets/mediatek/mt7981/ || true
           find bin/targets/mediatek/mt7981 -maxdepth 1 -type f \
-               \( -iname "*nx30*" -o -name "sha256sums" -o -name "*.manifest" \) \
+               \( -iname "*nx30*" -o -name "sha256sums" -o -name "*.manifest" \
+                  -o -name "config.buildinfo" -o -name "feeds.buildinfo" \
+                  -o -name "profiles.json" -o -name "version.buildinfo" \) \
                -exec cp {} ../out/ \;
           cd ..
           echo "===== 收集到的产物 ====="
           ls -lh out/
           test -n "$(ls -A out)" || { echo "::error::没有产出任何固件"; exit 1; }
+
+          echo "===== sha256sums 自校验 ====="
+          (cd out && sha256sum -c sha256sums) || \
+            { echo "::error::sha256sums 校验失败，Release 前终止"; exit 1; }
 
           FACTORY="$(ls out/*factory* 2>/dev/null | head -1 || true)"
           [ -n "$FACTORY" ] || { echo "::error::没有 factory.bin —— 原厂恢复页无法刷机"; exit 1; }
@@ -135,9 +171,16 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "$TAG  H3C NX30 Pro (5.4 / mt_wifi / UPnP)" \
             --notes "源码: $SRC_REPO @ $SRC_BRANCH
+          源码 commit: $SRC_COMMIT
+          feeds commit:
+            packages=$FEED_PACKAGES_COMMIT
+            luci=$FEED_LUCI_COMMIT
+            routing=$FEED_ROUTING_COMMIT
+            telephony=$FEED_TELEPHONY_COMMIT
           设备: $DEVICE (MT7981B)
           内核: 5.4 (21.02)
           无线: MTK 闭源 mt_wifi 7.6.7.3-mt7981 + WARP v2 + HNAT
           网络: UPnP (miniupnpd, iptables/firewall3)
           构建: $(date -u +'%Y-%m-%d %H:%M UTC')
+          校验: CI 已执行 sha256sum -c sha256sums
           注意: 原厂 U-Boot/NMBM 机器请确认镜像布局后再刷。"
