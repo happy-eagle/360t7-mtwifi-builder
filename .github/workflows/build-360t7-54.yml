@@ -13,7 +13,7 @@ env:
   SRC_COMMIT: "740103d655bcee6da7bc3b49b1cfdfdee4cd5bb6"
   FEED_PACKAGES_COMMIT: "e09f3c7d1903cfe7f523e209ab3ec778013ba309"
   FEED_LUCI_COMMIT: "5829eabba50ec0afa17d2ee486bc90dc15180c34"
-  FEED_ROUTING_COMMIT: "a9e43101bb726070cbf81b6225f4a4a5e5"
+  FEED_ROUTING_COMMIT: "a9e43101bb726070cbf81b6225fc0625f4a4a5e5"
   FEED_TELEPHONY_COMMIT: "920fbc5c0a2e4badf51bceff42e9a1e3eb693462"
   DEVICE: "mt7981-360-t7-108M"
 
@@ -68,13 +68,15 @@ jobs:
       - name: Update feeds (pinned commits)
         run: |
           cd openwrt
+          # 先用 upstream 分支完成 clone/update，再显式 checkout 固定 SHA。
+          # 避免不同 git 版本对 URL^SHA 写法的解析差异，并确保 21.02 对象在本地。
           cat > feeds.conf.default <<EOF
-          src-git-full packages https://github.com/immortalwrt/packages.git^$FEED_PACKAGES_COMMIT
-          src-git-full luci https://github.com/immortalwrt/luci.git^$FEED_LUCI_COMMIT
-          src-git-full routing https://github.com/openwrt/routing.git^$FEED_ROUTING_COMMIT
-          src-git-full telephony https://github.com/openwrt/telephony.git^$FEED_TELEPHONY_COMMIT
+          src-git-full packages https://github.com/immortalwrt/packages.git;openwrt-21.02
+          src-git-full luci https://github.com/immortalwrt/luci.git;openwrt-21.02
+          src-git-full routing https://github.com/openwrt/routing.git;openwrt-21.02
+          src-git-full telephony https://github.com/openwrt/telephony.git;openwrt-21.02
           EOF
-          echo "===== 固定 feeds ====="
+          echo "===== feeds 配置 ====="
           cat feeds.conf.default
           ./scripts/feeds update -a
           for feed in packages luci routing telephony; do
@@ -84,6 +86,10 @@ jobs:
               routing)   want="$FEED_ROUTING_COMMIT" ;;
               telephony) want="$FEED_TELEPHONY_COMMIT" ;;
             esac
+            # 确保 21.02 分支对象一定在本地，再切到固定 SHA
+            git -C "feeds/$feed" fetch origin \
+              "+refs/heads/openwrt-21.02:refs/remotes/origin/openwrt-21.02"
+            git -C "feeds/$feed" checkout --detach "$want"
             got="$(git -C "feeds/$feed" rev-parse HEAD)"
             echo "$feed @ $got"
             git -C "feeds/$feed" log -1 --format='  %ci  %s'
