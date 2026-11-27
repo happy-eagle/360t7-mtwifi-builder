@@ -144,7 +144,10 @@ jobs:
           test -n "$(ls -A out)" || { echo "::error::没有产出任何固件"; exit 1; }
 
           echo "===== sha256sums 自校验 ====="
-          (cd out && sha256sum -c sha256sums) || \
+          # sha256sums 还列出 5 个 bl2.bin（源码 ARTIFACTS，位于 staging 目录），
+          # 不在 bin/targets 里、也不随固件发布。用 --ignore-missing 跳过它们，
+          # 只校验真正收集到的镜像与 buildinfo。
+          (cd out && sha256sum -c sha256sums --ignore-missing) || \
             { echo "::error::sha256sums 校验失败，Release 前终止"; exit 1; }
 
           FACTORY="$(ls out/*factory* 2>/dev/null | head -1 || true)"
